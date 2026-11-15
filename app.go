@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,7 +19,7 @@ import (
 	"time"
 
 	grpcWhoami "github.com/baragoon/whoami/grpc"
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 )
 
@@ -29,14 +30,6 @@ const (
 	GB int64 = 1 << (10 * 3)
 	TB int64 = 1 << (10 * 4)
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(_ *http.Request) bool {
-		return true
-	},
-}
 
 var (
 	cert    string
@@ -151,21 +144,55 @@ func benchHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	ctx := context.WithoutCancel(r.Context())
+
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
+	conn.SetReadLimit(512 * MB)
+
+	gracefullyClosed := false
+	defer func() {
+		if gracefullyClosed {
+			return
+		}
+
+		err := conn.CloseNow()
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("Failed to close WebSocket connection: %v", err)
+		}
+	}()
+
 	for {
-		messageType, p, err := conn.ReadMessage()
+		messageType, p, err := conn.Read(ctx)
 		if err != nil {
+			closeStatus := websocket.CloseStatus(err)
+			if closeStatus == -1 {
+				return
+			}
+
+			if closeStatus == websocket.StatusNoStatusRcvd {
+				closeStatus = websocket.StatusNormalClosure
+			}
+
+			err = conn.Close(closeStatus, "")
+			gracefullyClosed = err == nil || errors.Is(err, net.ErrClosed)
+
+			if !gracefullyClosed {
+				log.Printf("Failed to complete WebSocket close handshake: %v", err)
+			}
+
 			return
 		}
 
 		printBinary(p)
 
-		err = conn.WriteMessage(messageType, p)
+		err = conn.Write(ctx, messageType, p)
 		if err != nil {
 			return
 		}

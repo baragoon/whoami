@@ -48,13 +48,26 @@ Heath check.
 
 | Flag      | Env var                    | Description                                                                                   |
 |-----------|----------------------------|-----------------------------------------------------------------------------------------------|
-| `cert`    |                            | Give me a certificate.                                                                        |
-| `key`     |                            | Give me a key.                                                                                |
-| `cacert`  |                            | Give me a CA chain, enforces mutual TLS                                                       |
+| `cert`    | `WHOAMI_CERT`              | Give me a certificate.                                                                        |
+| `key`     | `WHOAMI_KEY`               | Give me a key.                                                                                |
+| `cacert`  | `WHOAMI_CACERT`            | Give me a CA chain, enforces mutual TLS                                                       |
 | `port`    | `WHOAMI_PORT_NUMBER`       | Give me a port number. (default: `80`)                                                        |
 | `name`    | `WHOAMI_NAME`              | Give me a name.                                                                               |
 | `verbose` |                            | Enable verbose logging.                                                                       |
 |           | `WHOAMI_HIDE_INTERNAL_IPS` | Hide loopback, private, link-local, and unspecified addresses when `true` (default: `false`). |
+|           | `WHOAMI_HEALTHCHECK_HOST`  | Health check hostname (default: `127.0.0.1`); for TLS, must match the certificate SAN.        |
+
+Docker images enable a health check that runs `/whoami check` against `/health`; it requires no shell or external utilities. The check runs in a separate process and does not receive command-line arguments passed to the server. If the server uses CLI-only settings such as `--port`, `--cert`, or `--key`, the health check will use its defaults unless you pass matching options to `check` in an overridden `HEALTHCHECK`. Alternatively, use the corresponding `WHOAMI_*` environment variables so the server and check share the settings. Otherwise, a working custom-port or TLS service may be reported unhealthy.
+
+When `WHOAMI_CERT` and `WHOAMI_KEY` configure HTTPS for the server, the check uses HTTPS and validates the server certificate using system roots unless `WHOAMI_HEALTHCHECK_SERVER_CA` is set. `WHOAMI_CACERT` configures the server's client-certificate verification; it is not used by the health check to verify the server.
+
+Health-check client authentication is configured separately with `WHOAMI_HEALTHCHECK_CLIENT_CERT` and `WHOAMI_HEALTHCHECK_CLIENT_KEY`. Set both when the server requires a client certificate; server-only certificates in `WHOAMI_CERT` and `WHOAMI_KEY` are not sent by the check. **Existing mTLS deployments must configure these client credentials (and `WHOAMI_HEALTHCHECK_SERVER_CA` when needed) before using the image's built-in health check.** Otherwise the check fails and Docker marks the container unhealthy. Until migrated, disable the image check with `docker run --no-healthcheck` or override it with an appropriately configured health command.
+
+To override the image's `HEALTHCHECK` and pass matching options to `check`, for example:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD ["/whoami", "check", "--port=8443", "--cert=/certs/server.crt", "--key=/certs/server.key", "--healthcheck-client-cert=/certs/client.crt", "--healthcheck-client-key=/certs/client.key", "--healthcheck-server-ca=/certs/server-ca.crt", "--healthcheck-host=whoami.example"]
+```
 
 ## Examples
 

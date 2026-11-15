@@ -40,6 +40,7 @@ var (
 	name            string
 	verbose         bool
 	hideInternalIPs bool
+	healthCheckHost string
 )
 
 func init() {
@@ -53,11 +54,13 @@ func init() {
 	}
 
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
-	flag.StringVar(&cert, "cert", "", "give me a certificate")
-	flag.StringVar(&key, "key", "", "give me a key")
-	flag.StringVar(&ca, "cacert", "", "give me a CA chain, enforces mutual TLS")
+	flag.StringVar(&cert, "cert", getEnv("WHOAMI_CERT", ""), "give me a certificate")
+	flag.StringVar(&key, "key", getEnv("WHOAMI_KEY", ""), "give me a key")
+	flag.StringVar(&ca, "cacert", getEnv("WHOAMI_CACERT", ""), "give me a CA chain, enforces mutual TLS")
 	flag.StringVar(&port, "port", getEnv("WHOAMI_PORT_NUMBER", "80"), "give me a port number")
 	flag.StringVar(&name, "name", os.Getenv("WHOAMI_NAME"), "give me a name")
+
+	healthCheckHost = getEnv("WHOAMI_HEALTHCHECK_HOST", "127.0.0.1")
 }
 
 // Data whoami information.
@@ -74,6 +77,16 @@ type Data struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		err := runHealthCheck(os.Args[2:])
+		if err != nil {
+			log.Print(err)
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	flag.Parse()
 
 	mux := http.NewServeMux()
@@ -115,6 +128,145 @@ func main() {
 	log.Printf("Starting up with TLS on port %s", port)
 
 	log.Fatal(server.ListenAndServeTLS(cert, key))
+}
+
+func runHealthCheck(args []string) error {
+	config := healthCheckConfig{
+		port:                            port,
+		host:                            healthCheckHost,
+		serverCert:                      cert,
+		serverKey:                       key,
+		clientCert:                      getEnv("WHOAMI_HEALTHCHECK_CLIENT_CERT", ""),
+		clientKey:                       getEnv("WHOAMI_HEALTHCHECK_CLIENT_KEY", ""),
+		serverCA:                        getEnv("WHOAMI_HEALTHCHECK_SERVER_CA", ""),
+		serverRequiresClientCertificate: getEnv("WHOAMI_CACERT", "") != "",
+	}
+
+	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&config.port, "port", config.port, "health check port")
+	flags.StringVar(&config.host, "healthcheck-host", config.host, "health check host")
+	flags.StringVar(&config.serverCert, "cert", config.serverCert, "server certificate path")
+	flags.StringVar(&config.serverKey, "key", config.serverKey, "server key path")
+	flags.StringVar(&config.clientCert, "healthcheck-client-cert", config.clientCert, "health check client certificate path")
+	flags.StringVar(&config.clientKey, "healthcheck-client-key", config.clientKey, "health check client key path")
+	flags.StringVar(&config.serverCA, "healthcheck-server-ca", config.serverCA, "CA certificate for health check server validation")
+
+	err := flags.Parse(args)
+	if err != nil {
+		return fmt.Errorf("parse health check options: %w", err)
+	}
+
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected health check argument %q", flags.Arg(0))
+	}
+
+	tlsEnabled := config.serverCert != "" && config.serverKey != ""
+
+	if tlsEnabled && config.serverRequiresClientCertificate && (config.clientCert == "" || config.clientKey == "") {
+		return errors.New("WHOAMI_CACERT enables server mTLS; configure WHOAMI_HEALTHCHECK_CLIENT_CERT and WHOAMI_HEALTHCHECK_CLIENT_KEY")
+	}
+
+	tlsConfig, err := healthCheckTLSConfig(tlsEnabled, config.clientCert, config.clientKey, config.serverCA)
+	if err != nil {
+		return err
+	}
+
+	scheme := "http"
+	if tlsEnabled {
+		scheme = "https"
+	}
+
+	target := scheme + "://" + net.JoinHostPort(config.host, config.port) + "/health"
+
+	return checkHealth(target, tlsConfig)
+}
+
+type healthCheckConfig struct {
+	port                            string
+	host                            string
+	serverCert                      string
+	serverKey                       string
+	clientCert                      string
+	clientKey                       string
+	serverCA                        string
+	serverRequiresClientCertificate bool
+}
+
+func healthCheckTLSConfig(tlsEnabled bool, clientCertFile, clientKeyFile, serverCAFile string) (*tls.Config, error) {
+	if !tlsEnabled {
+		if clientCertFile != "" || clientKeyFile != "" || serverCAFile != "" {
+			return nil, errors.New("health check TLS options require server --cert and --key")
+		}
+
+		return nil, nil
+	}
+
+	config := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	if (clientCertFile == "") != (clientKeyFile == "") {
+		return nil, errors.New("health check client certificate and key must be configured together")
+	}
+
+	if clientCertFile != "" {
+		clientCert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load health check client certificate: %w", err)
+		}
+
+		config.Certificates = []tls.Certificate{clientCert}
+	}
+
+	if serverCAFile != "" {
+		caPEM, err := os.ReadFile(serverCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read health check server CA certificate: %w", err)
+		}
+
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("health check server CA file %q contains no certificates", serverCAFile)
+		}
+
+		config.RootCAs = roots
+	}
+
+	return config, nil
+}
+
+func checkHealth(target string, tlsConfig *tls.Config) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
+	if err != nil {
+		return fmt.Errorf("create health check request: %w", err)
+	}
+
+	transport := &http.Transport{
+		Proxy:           nil,
+		TLSClientConfig: tlsConfig,
+	}
+	client := &http.Client{Transport: transport}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("health check request failed: %w", err)
+	}
+
+	statusCode := response.StatusCode
+	defer func() {
+		closeErr := response.Body.Close()
+		if closeErr != nil {
+			log.Printf("failed to close health check response: %v", closeErr)
+		}
+	}()
+
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("health endpoint returned %s", response.Status)
+	}
+
+	return nil
 }
 
 func setupMutualTLS(ca string) *tls.Config {

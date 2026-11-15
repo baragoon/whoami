@@ -15,3 +15,5 @@ COPY whoami /
 
 ENTRYPOINT ["/whoami"]
 EXPOSE 80
+# The check runs separately and does not inherit server arguments; share WHOAMI_* settings or override it.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD ["/whoami", "check"]

@@ -7,16 +7,21 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 )
+
+const websocketTestTimeout = 5 * time.Second
 
 func Test_echoHandler(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(echoHandler))
 	defer server.Close()
 
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), websocketTestTimeout)
+
 	conn, response, err := websocket.Dial(
-		context.Background(),
+		dialCtx,
 		"ws"+strings.TrimPrefix(server.URL, "http"),
 		&websocket.DialOptions{
 			HTTPHeader: http.Header{
@@ -24,6 +29,9 @@ func Test_echoHandler(t *testing.T) {
 			},
 		},
 	)
+
+	cancelDial()
+
 	if response != nil && response.Body != nil {
 		defer func() {
 			closeErr := response.Body.Close()
@@ -70,12 +78,15 @@ func Test_echoHandler(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			writeErr := conn.Write(context.Background(), test.messageType, test.message)
+			ctx, cancel := context.WithTimeout(context.Background(), websocketTestTimeout)
+			defer cancel()
+
+			writeErr := conn.Write(ctx, test.messageType, test.message)
 			if writeErr != nil {
 				t.Fatalf("websocket.Conn.Write() error = %v", writeErr)
 			}
 
-			messageType, message, err := conn.Read(context.Background())
+			messageType, message, err := conn.Read(ctx)
 			if err != nil {
 				t.Fatalf("websocket.Conn.Read() error = %v", err)
 			}

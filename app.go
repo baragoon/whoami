@@ -132,13 +132,14 @@ func main() {
 
 func runHealthCheck(args []string) error {
 	config := healthCheckConfig{
-		port:       port,
-		host:       healthCheckHost,
-		serverCert: cert,
-		serverKey:  key,
-		clientCert: getEnv("WHOAMI_HEALTHCHECK_CLIENT_CERT", ""),
-		clientKey:  getEnv("WHOAMI_HEALTHCHECK_CLIENT_KEY", ""),
-		serverCA:   getEnv("WHOAMI_HEALTHCHECK_SERVER_CA", ""),
+		port:                            port,
+		host:                            healthCheckHost,
+		serverCert:                      cert,
+		serverKey:                       key,
+		clientCert:                      getEnv("WHOAMI_HEALTHCHECK_CLIENT_CERT", ""),
+		clientKey:                       getEnv("WHOAMI_HEALTHCHECK_CLIENT_KEY", ""),
+		serverCA:                        getEnv("WHOAMI_HEALTHCHECK_SERVER_CA", ""),
+		serverRequiresClientCertificate: getEnv("WHOAMI_CACERT", "") != "",
 	}
 
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -162,6 +163,10 @@ func runHealthCheck(args []string) error {
 
 	tlsEnabled := config.serverCert != "" && config.serverKey != ""
 
+	if tlsEnabled && config.serverRequiresClientCertificate && (config.clientCert == "" || config.clientKey == "") {
+		return errors.New("WHOAMI_CACERT enables server mTLS; configure WHOAMI_HEALTHCHECK_CLIENT_CERT and WHOAMI_HEALTHCHECK_CLIENT_KEY")
+	}
+
 	tlsConfig, err := healthCheckTLSConfig(tlsEnabled, config.clientCert, config.clientKey, config.serverCA)
 	if err != nil {
 		return err
@@ -178,13 +183,14 @@ func runHealthCheck(args []string) error {
 }
 
 type healthCheckConfig struct {
-	port       string
-	host       string
-	serverCert string
-	serverKey  string
-	clientCert string
-	clientKey  string
-	serverCA   string
+	port                            string
+	host                            string
+	serverCert                      string
+	serverKey                       string
+	clientCert                      string
+	clientKey                       string
+	serverCA                        string
+	serverRequiresClientCertificate bool
 }
 
 func healthCheckTLSConfig(tlsEnabled bool, clientCertFile, clientKeyFile, serverCAFile string) (*tls.Config, error) {

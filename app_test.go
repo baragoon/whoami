@@ -26,10 +26,13 @@ import (
 const healthCheckTestHost = "127.0.0.1"
 
 const (
-	websocketTestTimeout = 5 * time.Second
-	privateRemoteAddr    = "192.168.90.254:48130"
-	publicIPv4           = "8.8.8.8"
-	publicRemoteAddr     = publicIPv4 + ":443"
+	healthCheckClientCertFlag = "--healthcheck-client-cert="
+	healthCheckClientKeyFlag  = "--healthcheck-client-key="
+	healthCheckServerCAFlag   = "--healthcheck-server-ca="
+	websocketTestTimeout      = 5 * time.Second
+	privateRemoteAddr         = "192.168.90.254:48130"
+	publicIPv4                = "8.8.8.8"
+	publicRemoteAddr          = publicIPv4 + ":443"
 )
 
 func Test_echoHandler(t *testing.T) {
@@ -153,6 +156,8 @@ func Test_checkHealth(t *testing.T) {
 }
 
 func Test_runHealthCheckUsesConfiguredPort(t *testing.T) {
+	t.Setenv("WHOAMI_CACERT", "")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -168,9 +173,9 @@ func Test_runHealthCheckUsesConfiguredPort(t *testing.T) {
 		"--healthcheck-host=" + host,
 		"--cert=",
 		"--key=",
-		"--healthcheck-client-cert=",
-		"--healthcheck-client-key=",
-		"--healthcheck-server-ca=",
+		healthCheckClientCertFlag,
+		healthCheckClientKeyFlag,
+		healthCheckServerCAFlag,
 	})
 	if err != nil {
 		t.Errorf("runHealthCheck() error = %v", err)
@@ -178,6 +183,8 @@ func Test_runHealthCheckUsesConfiguredPort(t *testing.T) {
 }
 
 func Test_runHealthCheckUsesTLSAndClientCertificate(t *testing.T) {
+	t.Setenv("WHOAMI_CACERT", "")
+
 	serverCredentials := writeHealthCheckCertificates(t, x509.ExtKeyUsageServerAuth)
 	clientCredentials := writeHealthCheckCertificates(t, x509.ExtKeyUsageClientAuth)
 
@@ -221,13 +228,13 @@ func Test_runHealthCheckUsesTLSAndClientCertificate(t *testing.T) {
 		"--healthcheck-host=" + host,
 		"--cert=" + serverCredentials.cert,
 		"--key=" + serverCredentials.key,
-		"--healthcheck-client-cert=" + clientCredentials.cert,
-		"--healthcheck-client-key=" + clientCredentials.key,
+		healthCheckClientCertFlag + clientCredentials.cert,
+		healthCheckClientKeyFlag + clientCredentials.key,
 	}
 
 	untrustedArgs := make([]string, len(checkArgs)+1)
 	copy(untrustedArgs, checkArgs)
-	untrustedArgs[len(checkArgs)] = "--healthcheck-server-ca="
+	untrustedArgs[len(checkArgs)] = healthCheckServerCAFlag
 
 	err = runHealthCheck(untrustedArgs)
 	if err == nil {
@@ -236,7 +243,7 @@ func Test_runHealthCheckUsesTLSAndClientCertificate(t *testing.T) {
 
 	trustedArgs := make([]string, len(checkArgs)+1)
 	copy(trustedArgs, checkArgs)
-	trustedArgs[len(checkArgs)] = "--healthcheck-server-ca=" + serverCredentials.ca
+	trustedArgs[len(checkArgs)] = healthCheckServerCAFlag + serverCredentials.ca
 
 	err = runHealthCheck(trustedArgs)
 	if err != nil {
@@ -245,6 +252,8 @@ func Test_runHealthCheckUsesTLSAndClientCertificate(t *testing.T) {
 }
 
 func Test_runHealthCheckAllowsServerOnlyCertificate(t *testing.T) {
+	t.Setenv("WHOAMI_CACERT", "")
+
 	serverCredentials := writeHealthCheckCertificates(t, x509.ExtKeyUsageServerAuth)
 
 	serverCert, err := tls.LoadX509KeyPair(serverCredentials.cert, serverCredentials.key)
@@ -274,12 +283,27 @@ func Test_runHealthCheckAllowsServerOnlyCertificate(t *testing.T) {
 		"--healthcheck-host=" + host,
 		"--cert=" + serverCredentials.cert,
 		"--key=" + serverCredentials.key,
-		"--healthcheck-client-cert=",
-		"--healthcheck-client-key=",
-		"--healthcheck-server-ca=" + serverCredentials.ca,
+		healthCheckClientCertFlag,
+		healthCheckClientKeyFlag,
+		healthCheckServerCAFlag + serverCredentials.ca,
 	})
 	if err != nil {
 		t.Errorf("runHealthCheck() with server-only certificate error = %v", err)
+	}
+}
+
+func Test_runHealthCheckRequiresClientCredentialsForMTLS(t *testing.T) {
+	t.Setenv("WHOAMI_CACERT", "client-ca.pem")
+
+	err := runHealthCheck([]string{
+		"--cert=server.crt",
+		"--key=server.key",
+		healthCheckClientCertFlag,
+		healthCheckClientKeyFlag,
+		healthCheckServerCAFlag,
+	})
+	if err == nil || !strings.Contains(err.Error(), "WHOAMI_HEALTHCHECK_CLIENT_CERT") {
+		t.Errorf("runHealthCheck() error = %v, want mTLS client-credential guidance", err)
 	}
 }
 

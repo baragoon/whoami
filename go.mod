@@ -3,7 +3,7 @@ module github.com/baragoon/whoami
 go 1.27.4
 
 require (
-	github.com/gorilla/websocket v1.5.3
+	github.com/coder/websocket v1.8.15
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )

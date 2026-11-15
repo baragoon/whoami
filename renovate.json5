@@ -3,12 +3,7 @@
   configMigration: true,
   forkProcessing: "enabled",
   extends: [
-    'config:recommended',
-    ':disableRateLimiting',
-    ':separateMultipleMajorReleases',
-    ':configMigration',
-    'abandonments:recommended',
-    'helpers:pinGitHubActionDigestsToSemver',
+    "config:best-practices",
   ],
   postUpdateOptions: [
     "gomodTidy",

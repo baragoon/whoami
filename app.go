@@ -154,7 +154,14 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	conn.SetReadLimit(512 * MB)
+
+	gracefullyClosed := false
 	defer func() {
+		if gracefullyClosed {
+			return
+		}
+
 		err := conn.CloseNow()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("Failed to close WebSocket connection: %v", err)
@@ -164,6 +171,22 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		messageType, p, err := conn.Read(ctx)
 		if err != nil {
+			closeStatus := websocket.CloseStatus(err)
+			if closeStatus == -1 {
+				return
+			}
+
+			if closeStatus == websocket.StatusNoStatusRcvd {
+				closeStatus = websocket.StatusNormalClosure
+			}
+
+			err = conn.Close(closeStatus, "")
+			gracefullyClosed = err == nil || errors.Is(err, net.ErrClosed)
+
+			if !gracefullyClosed {
+				log.Printf("Failed to complete WebSocket close handshake: %v", err)
+			}
+
 			return
 		}
 

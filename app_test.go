@@ -37,6 +37,8 @@ func Test_echoHandler(t *testing.T) {
 		t.Fatalf("websocket.Dial() error = %v", err)
 	}
 
+	conn.SetReadLimit(512 << 20)
+
 	defer func() {
 		closeErr := conn.Close(websocket.StatusNormalClosure, "")
 		if closeErr != nil {
@@ -58,6 +60,11 @@ func Test_echoHandler(t *testing.T) {
 			name:        "binary",
 			messageType: websocket.MessageBinary,
 			message:     []byte{0, 1, 2},
+		},
+		{
+			name:        "message larger than default read limit",
+			messageType: websocket.MessageBinary,
+			message:     make([]byte, 32*1024+1),
 		},
 	}
 

@@ -37,21 +37,21 @@ archives:
       - LICENSE
 
 docker_manifests:
-  - name_template: 'ghcr.io/philipfreude/whoami:{{ .Tag }}'
+  - name_template: 'ghcr.io/baragoon/whoami:{{ .Tag }}'
     image_templates:
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-amd64'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-arm64'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-armv7'
-  - name_template: 'ghcr.io/philipfreude/whoami:latest'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-amd64'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-arm64'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-armv7'
+  - name_template: 'ghcr.io/baragoon/whoami:latest'
     image_templates:
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-amd64'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-arm64'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-armv7'
-  - name_template: 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-amd64'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-arm64'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-armv7'
+  - name_template: 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}'
     image_templates:
-      - 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}-amd64'
-      - 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}-arm64'
-      - 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}-armv7'
+      - 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}-amd64'
+      - 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}-arm64'
+      - 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}-armv7'
 
 dockers:
   - use: buildx
@@ -59,9 +59,9 @@ dockers:
     goarch: amd64
     dockerfile: buildx.Dockerfile
     image_templates:
-      - 'ghcr.io/philipfreude/whoami:latest-amd64'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-amd64'
-      - 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}-amd64'
+      - 'ghcr.io/baragoon/whoami:latest-amd64'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-amd64'
+      - 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}-amd64'
     build_flag_templates:
       - '--pull'
       # https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys
@@ -80,9 +80,9 @@ dockers:
     goarch: arm64
     dockerfile: buildx.Dockerfile
     image_templates:
-      - 'ghcr.io/philipfreude/whoami:latest-arm64'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-arm64'
-      - 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}-arm64'
+      - 'ghcr.io/baragoon/whoami:latest-arm64'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-arm64'
+      - 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}-arm64'
     build_flag_templates:
       - '--pull'
       # https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys
@@ -102,9 +102,9 @@ dockers:
     goarm: '7'
     dockerfile: buildx.Dockerfile
     image_templates:
-      - 'ghcr.io/philipfreude/whoami:latest-armv7'
-      - 'ghcr.io/philipfreude/whoami:{{ .Tag }}-armv7'
-      - 'ghcr.io/philipfreude/whoami:v{{ .Major }}.{{ .Minor }}-armv7'
+      - 'ghcr.io/baragoon/whoami:latest-armv7'
+      - 'ghcr.io/baragoon/whoami:{{ .Tag }}-armv7'
+      - 'ghcr.io/baragoon/whoami:v{{ .Major }}.{{ .Minor }}-armv7'
     build_flag_templates:
       - '--pull'
       # https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys

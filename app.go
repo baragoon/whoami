@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	grpcWhoami "github.com/philipfreude/whoami/grpc"
+	grpcWhoami "github.com/baragoon/whoami/grpc"
 	"google.golang.org/grpc"
 )
 

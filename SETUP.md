@@ -9,7 +9,7 @@ Good news! **No manual secrets setup is required** after forking this repository
 The workflow now uses GitHub's automatic `GITHUB_TOKEN` which is provided automatically to all GitHub Actions workflows. This token has the necessary permissions to:
 
 1. **Create GitHub Releases** - GoReleaser will create releases with binaries
-2. **Push Docker Images to GHCR** - Images will be published to `ghcr.io/philipfreude/whoami`
+2. **Push Docker Images to GHCR** - Images will be published to `ghcr.io/baragoon/whoami`
 
 ### Permissions
 
@@ -29,7 +29,7 @@ When you push a tag (e.g., `v1.0.0`), the release workflow will:
 
 1. ✅ Authenticate to GHCR using `${{ github.actor }}` (your username) and `${{ secrets.GITHUB_TOKEN }}`
 2. ✅ Build multi-architecture Docker images (amd64, arm64, armv7)
-3. ✅ Push images to `ghcr.io/philipfreude/whoami` with tags: `latest`, `<version>`, and `v<major>.<minor>`
+3. ✅ Push images to `ghcr.io/baragoon/whoami` with tags: `latest`, `<version>`, and `v<major>.<minor>`
 4. ✅ Create a GitHub release with compiled binaries for multiple platforms
 
 ### Testing the Release Workflow
@@ -43,9 +43,9 @@ git push origin v1.0.0
 ```
 
 Then check:
-- **GitHub Actions**: https://github.com/philipfreude/whoami/actions
-- **Releases**: https://github.com/philipfreude/whoami/releases
-- **Packages**: https://github.com/philipfreude?tab=packages
+- **GitHub Actions**: https://github.com/baragoon/whoami/actions
+- **Releases**: https://github.com/baragoon/whoami/releases
+- **Packages**: https://github.com/baragoon?tab=packages
 
 ### No Secrets Required! ✨
 
@@ -157,7 +157,7 @@ If you encounter permission issues:
    - Make sure "Allow GitHub Actions to create and approve pull requests" is checked (if needed)
 
 2. **Verify package visibility**:
-   - After the first release, check your packages at: https://github.com/philipfreude?tab=packages
+   - After the first release, check your packages at: https://github.com/baragoon?tab=packages
    - You may need to make the package public if you want it publicly accessible
 
 3. **Check Actions logs**:

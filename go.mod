@@ -1,4 +1,4 @@
-module github.com/philipfreude/whoami
+module github.com/baragoon/whoami
 
 go 1.27.4
 

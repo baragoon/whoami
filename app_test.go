@@ -3,15 +3,27 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 )
+
+const healthCheckTestHost = "127.0.0.1"
 
 const (
 	websocketTestTimeout = 5 * time.Second
@@ -106,6 +118,262 @@ func Test_echoHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_checkHealth(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantErr    bool
+	}{
+		{
+			name:       "healthy",
+			statusCode: http.StatusOK,
+		},
+		{
+			name:       "unhealthy",
+			statusCode: http.StatusServiceUnavailable,
+			wantErr:    true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.statusCode)
+			}))
+			defer server.Close()
+
+			err := checkHealth(server.URL, nil)
+			if (err != nil) != test.wantErr {
+				t.Errorf("checkHealth() error = %v, wantErr %t", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func Test_runHealthCheckUsesConfiguredPort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	if err != nil {
+		t.Fatalf("net.SplitHostPort() error = %v", err)
+	}
+
+	err = runHealthCheck([]string{
+		"--port=" + port,
+		"--healthcheck-host=" + host,
+		"--cert=",
+		"--key=",
+		"--healthcheck-client-cert=",
+		"--healthcheck-client-key=",
+		"--healthcheck-server-ca=",
+	})
+	if err != nil {
+		t.Errorf("runHealthCheck() error = %v", err)
+	}
+}
+
+func Test_runHealthCheckUsesTLSAndClientCertificate(t *testing.T) {
+	serverCredentials := writeHealthCheckCertificates(t, x509.ExtKeyUsageServerAuth)
+	clientCredentials := writeHealthCheckCertificates(t, x509.ExtKeyUsageClientAuth)
+
+	serverCert, err := tls.LoadX509KeyPair(serverCredentials.cert, serverCredentials.key)
+	if err != nil {
+		t.Fatalf("tls.LoadX509KeyPair() error = %v", err)
+	}
+
+	clientCAPEM, err := os.ReadFile(clientCredentials.ca)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+
+	clientCAs := x509.NewCertPool()
+
+	if !clientCAs.AppendCertsFromPEM(clientCAPEM) {
+		t.Fatal("AppendCertsFromPEM() returned false")
+	}
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	server.TLS = &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCAs,
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	server.StartTLS()
+
+	defer server.Close()
+
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "https://"))
+	if err != nil {
+		t.Fatalf("net.SplitHostPort() error = %v", err)
+	}
+
+	checkArgs := []string{
+		"--port=" + port,
+		"--healthcheck-host=" + host,
+		"--cert=" + serverCredentials.cert,
+		"--key=" + serverCredentials.key,
+		"--healthcheck-client-cert=" + clientCredentials.cert,
+		"--healthcheck-client-key=" + clientCredentials.key,
+	}
+
+	untrustedArgs := make([]string, len(checkArgs)+1)
+	copy(untrustedArgs, checkArgs)
+	untrustedArgs[len(checkArgs)] = "--healthcheck-server-ca="
+
+	err = runHealthCheck(untrustedArgs)
+	if err == nil {
+		t.Fatal("runHealthCheck() succeeded without trusting the server certificate")
+	}
+
+	trustedArgs := make([]string, len(checkArgs)+1)
+	copy(trustedArgs, checkArgs)
+	trustedArgs[len(checkArgs)] = "--healthcheck-server-ca=" + serverCredentials.ca
+
+	err = runHealthCheck(trustedArgs)
+	if err != nil {
+		t.Errorf("runHealthCheck() with mutual TLS error = %v", err)
+	}
+}
+
+func Test_runHealthCheckAllowsServerOnlyCertificate(t *testing.T) {
+	serverCredentials := writeHealthCheckCertificates(t, x509.ExtKeyUsageServerAuth)
+
+	serverCert, err := tls.LoadX509KeyPair(serverCredentials.cert, serverCredentials.key)
+	if err != nil {
+		t.Fatalf("tls.LoadX509KeyPair() error = %v", err)
+	}
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	server.TLS = &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	server.StartTLS()
+
+	defer server.Close()
+
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "https://"))
+	if err != nil {
+		t.Fatalf("net.SplitHostPort() error = %v", err)
+	}
+
+	err = runHealthCheck([]string{
+		"--port=" + port,
+		"--healthcheck-host=" + host,
+		"--cert=" + serverCredentials.cert,
+		"--key=" + serverCredentials.key,
+		"--healthcheck-client-cert=",
+		"--healthcheck-client-key=",
+		"--healthcheck-server-ca=" + serverCredentials.ca,
+	})
+	if err != nil {
+		t.Errorf("runHealthCheck() with server-only certificate error = %v", err)
+	}
+}
+
+type healthCheckTestCertificates struct {
+	cert string
+	key  string
+	ca   string
+}
+
+func writeHealthCheckCertificates(t *testing.T, usage x509.ExtKeyUsage) healthCheckTestCertificates {
+	t.Helper()
+
+	now := time.Now()
+
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+	}
+
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "health check test CA"},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	}
+
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate() for CA error = %v", err)
+	}
+
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate() error = %v", err)
+	}
+
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey() for leaf error = %v", err)
+	}
+
+	leafTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: healthCheckTestHost},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(time.Hour),
+		IPAddresses:  []net.IP{net.ParseIP(healthCheckTestHost)},
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{usage},
+	}
+
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate() for leaf error = %v", err)
+	}
+
+	keyDER, err := x509.MarshalPKCS8PrivateKey(leafKey)
+	if err != nil {
+		t.Fatalf("x509.MarshalPKCS8PrivateKey() error = %v", err)
+	}
+
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "cert.pem")
+	keyFile := filepath.Join(dir, "key.pem")
+	caFile := filepath.Join(dir, "ca.pem")
+	files := []struct {
+		path string
+		data []byte
+	}{
+		{
+			path: certFile,
+			data: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
+		},
+		{
+			path: keyFile,
+			data: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+		},
+		{
+			path: caFile,
+			data: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}),
+		},
+	}
+
+	for _, file := range files {
+		err = os.WriteFile(file.path, file.data, 0o600)
+		if err != nil {
+			t.Fatalf("os.WriteFile() error = %v", err)
+		}
+	}
+
+	return healthCheckTestCertificates{cert: certFile, key: keyFile, ca: caFile}
 }
 
 func Test_isInternalIP(t *testing.T) {

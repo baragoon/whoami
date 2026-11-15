@@ -26,3 +26,4 @@ COPY --from=builder /go/whoami/whoami .
 
 ENTRYPOINT ["/whoami"]
 EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD ["/whoami", "check"]

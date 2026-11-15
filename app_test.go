@@ -16,6 +16,8 @@ import (
 const (
 	websocketTestTimeout = 5 * time.Second
 	privateRemoteAddr    = "192.168.90.254:48130"
+	publicIPv4           = "8.8.8.8"
+	publicRemoteAddr     = publicIPv4 + ":443"
 )
 
 func Test_echoHandler(t *testing.T) {
@@ -116,7 +118,7 @@ func Test_isInternalIP(t *testing.T) {
 		{ip: "192.168.90.9", internal: true},
 		{ip: "fd4a:bfb9:100e:90::9", internal: true},
 		{ip: "fe80::90d4:c4ff:fed8:a3cd", internal: true},
-		{ip: "8.8.8.8", internal: false},
+		{ip: publicIPv4, internal: false},
 	}
 
 	for _, test := range tests {
@@ -157,9 +159,9 @@ func Test_filterRemoteAddr(t *testing.T) {
 		},
 		{
 			name:         "keeps public address",
-			remoteAddr:   "8.8.8.8:443",
+			remoteAddr:   publicRemoteAddr,
 			hideInternal: true,
-			want:         "8.8.8.8:443",
+			want:         publicRemoteAddr,
 		},
 		{
 			name:       "keeps address when disabled",
@@ -177,18 +179,37 @@ func Test_filterRemoteAddr(t *testing.T) {
 	}
 }
 
-func Test_getIPsHidesInternalAddresses(t *testing.T) {
-	previous := hideInternalIPs
+func Test_filterIPsHidesInternalAddresses(t *testing.T) {
+	input := []string{
+		"127.0.0.1",
+		"::1",
+		"192.168.90.9",
+		"fd4a:bfb9:100e:90::9",
+		"fe80::90d4:c4ff:fed8:a3cd",
+		publicIPv4,
+		"2001:4860:4860::8888",
+	}
 
-	hideInternalIPs = true
+	ips := make([]net.IP, 0, len(input))
+	for _, value := range input {
+		ip := net.ParseIP(value)
+		if ip == nil {
+			t.Fatalf("net.ParseIP(%q) returned nil", value)
+		}
 
-	t.Cleanup(func() {
-		hideInternalIPs = previous
-	})
+		ips = append(ips, ip)
+	}
 
-	for _, ip := range getIPs() {
-		if parsed := net.ParseIP(ip); parsed != nil && isInternalIP(parsed) {
-			t.Errorf("getIPs() returned internal address %q", ip)
+	got := filterIPs(ips, true)
+
+	want := []string{publicIPv4, "2001:4860:4860::8888"}
+	if len(got) != len(want) {
+		t.Fatalf("filterIPs() = %v, want %v", got, want)
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("filterIPs()[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
 }

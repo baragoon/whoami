@@ -393,7 +393,7 @@ func getEnv(key, fallback string) string {
 }
 
 func getIPs() []string {
-	var ips []string
+	var ips []net.IP
 
 	ifaces, _ := net.Interfaces()
 	for _, i := range ifaces {
@@ -409,15 +409,26 @@ func getIPs() []string {
 				ip = v.IP
 			}
 
-			if ip == nil || (hideInternalIPs && isInternalIP(ip)) {
-				continue
+			if ip != nil {
+				ips = append(ips, ip)
 			}
-
-			ips = append(ips, ip.String())
 		}
 	}
 
-	return ips
+	return filterIPs(ips, hideInternalIPs)
+}
+
+func filterIPs(ips []net.IP, hideInternal bool) []string {
+	filtered := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if ip == nil || (hideInternal && isInternalIP(ip)) {
+			continue
+		}
+
+		filtered = append(filtered, ip.String())
+	}
+
+	return filtered
 }
 
 func isInternalIP(ip net.IP) bool {

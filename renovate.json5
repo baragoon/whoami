@@ -8,6 +8,19 @@
   postUpdateOptions: [
     "gomodTidy",
   ],
+  customManagers: [
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/(^|/)\\.github/workflows/ci\\.yml$/',
+      ],
+      matchStrings: [
+        'version: (?<currentValue>v\\d+\\.\\d+\\.\\d+)',
+      ],
+      depNameTemplate: 'golangci/golangci-lint',
+      datasourceTemplate: 'github-releases',
+    },
+  ],
   packageRules: [
     {
       matchManagers: [

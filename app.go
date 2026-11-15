@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -32,15 +33,25 @@ const (
 )
 
 var (
-	cert    string
-	key     string
-	ca      string
-	port    string
-	name    string
-	verbose bool
+	cert            string
+	key             string
+	ca              string
+	port            string
+	name            string
+	verbose         bool
+	hideInternalIPs bool
 )
 
 func init() {
+	if value := os.Getenv("WHOAMI_HIDE_INTERNAL_IPS"); value != "" {
+		var err error
+
+		hideInternalIPs, err = strconv.ParseBool(value)
+		if err != nil {
+			log.Fatalf("invalid WHOAMI_HIDE_INTERNAL_IPS value %q: %v", value, err)
+		}
+	}
+
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.StringVar(&cert, "cert", "", "give me a certificate")
 	flag.StringVar(&key, "key", "", "give me a key")
@@ -133,7 +144,7 @@ func handle(next http.HandlerFunc, verbose bool) http.Handler {
 		next(w, r)
 
 		// <remote_IP_address> - [<timestamp>] "<request_method> <request_path> <request_protocol>" -
-		log.Printf("%s - - [%s] \"%s %s %s\" - -", r.RemoteAddr, time.Now().Format("02/Jan/2006:15:04:05 -0700"), r.Method, r.URL.Path, r.Proto)
+		log.Printf("%s - - [%s] \"%s %s %s\" - -", filterRemoteAddr(r.RemoteAddr, hideInternalIPs), time.Now().Format("02/Jan/2006:15:04:05 -0700"), r.Method, r.URL.Path, r.Proto)
 	})
 }
 
@@ -277,7 +288,10 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintln(w, "IP:", ip)
 	}
 
-	_, _ = fmt.Fprintln(w, "RemoteAddr:", r.RemoteAddr)
+	remoteAddr := filterRemoteAddr(r.RemoteAddr, hideInternalIPs)
+	if remoteAddr != "" {
+		_, _ = fmt.Fprintln(w, "RemoteAddr:", remoteAddr)
+	}
 
 	if r.TLS != nil {
 		for i, cert := range r.TLS.PeerCertificates {
@@ -321,7 +335,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		Host:       r.Host,
 		Method:     r.Method,
 		Name:       name,
-		RemoteAddr: r.RemoteAddr,
+		RemoteAddr: filterRemoteAddr(r.RemoteAddr, hideInternalIPs),
 		Environ:    environ,
 	}
 
@@ -395,13 +409,44 @@ func getIPs() []string {
 				ip = v.IP
 			}
 
-			if ip != nil {
-				ips = append(ips, ip.String())
+			if ip == nil || (hideInternalIPs && isInternalIP(ip)) {
+				continue
 			}
+
+			ips = append(ips, ip.String())
 		}
 	}
 
 	return ips
+}
+
+func isInternalIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	return ok && isInternalAddr(addr)
+}
+
+func isInternalAddr(addr netip.Addr) bool {
+	addr = addr.Unmap().WithZone("")
+
+	return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() || addr.IsUnspecified()
+}
+
+func filterRemoteAddr(remoteAddr string, hideInternal bool) string {
+	if !hideInternal {
+		return remoteAddr
+	}
+
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = strings.Trim(remoteAddr, "[]")
+	}
+
+	addr, err := netip.ParseAddr(host)
+	if err == nil && isInternalAddr(addr) {
+		return ""
+	}
+
+	return remoteAddr
 }
 
 type whoamiServer struct {
@@ -420,23 +465,7 @@ func (g whoamiServer) Whoami(_ context.Context, _ *grpcWhoami.WhoamiRequest) (*g
 
 	reply.Hostname, _ = os.Hostname()
 
-	ifaces, _ := net.Interfaces()
-	for _, i := range ifaces {
-		addrs, _ := i.Addrs()
-		// handle err
-		for _, addr := range addrs {
-			var ip net.IP
-
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-
-			reply.Iface = append(reply.Iface, ip.String())
-		}
-	}
+	reply.Iface = getIPs()
 
 	return reply, nil
 }

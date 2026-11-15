@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +13,10 @@ import (
 	"github.com/coder/websocket"
 )
 
-const websocketTestTimeout = 5 * time.Second
+const (
+	websocketTestTimeout = 5 * time.Second
+	privateRemoteAddr    = "192.168.90.254:48130"
+)
 
 func Test_echoHandler(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(echoHandler))
@@ -99,5 +103,92 @@ func Test_echoHandler(t *testing.T) {
 				t.Errorf("message = %v, want %v", message, test.message)
 			}
 		})
+	}
+}
+
+func Test_isInternalIP(t *testing.T) {
+	tests := []struct {
+		ip       string
+		internal bool
+	}{
+		{ip: "127.0.0.1", internal: true},
+		{ip: "::1", internal: true},
+		{ip: "192.168.90.9", internal: true},
+		{ip: "fd4a:bfb9:100e:90::9", internal: true},
+		{ip: "fe80::90d4:c4ff:fed8:a3cd", internal: true},
+		{ip: "8.8.8.8", internal: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.ip, func(t *testing.T) {
+			ip := net.ParseIP(test.ip)
+			if ip == nil {
+				t.Fatalf("net.ParseIP(%q) returned nil", test.ip)
+			}
+
+			if got := isInternalIP(ip); got != test.internal {
+				t.Errorf("isInternalIP(%q) = %t, want %t", test.ip, got, test.internal)
+			}
+		})
+	}
+}
+
+func Test_filterRemoteAddr(t *testing.T) {
+	tests := []struct {
+		name         string
+		remoteAddr   string
+		hideInternal bool
+		want         string
+	}{
+		{
+			name:         "hides IPv4 private address and port",
+			remoteAddr:   privateRemoteAddr,
+			hideInternal: true,
+		},
+		{
+			name:         "hides IPv6 loopback",
+			remoteAddr:   "[::1]:48130",
+			hideInternal: true,
+		},
+		{
+			name:         "hides scoped IPv6 link-local address",
+			remoteAddr:   "[fe80::90d4:c4ff:fed8:a3cd%eth0]:48130",
+			hideInternal: true,
+		},
+		{
+			name:         "keeps public address",
+			remoteAddr:   "8.8.8.8:443",
+			hideInternal: true,
+			want:         "8.8.8.8:443",
+		},
+		{
+			name:       "keeps address when disabled",
+			remoteAddr: privateRemoteAddr,
+			want:       privateRemoteAddr,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := filterRemoteAddr(test.remoteAddr, test.hideInternal); got != test.want {
+				t.Errorf("filterRemoteAddr() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func Test_getIPsHidesInternalAddresses(t *testing.T) {
+	previous := hideInternalIPs
+
+	hideInternalIPs = true
+
+	t.Cleanup(func() {
+		hideInternalIPs = previous
+	})
+
+	for _, ip := range getIPs() {
+		if parsed := net.ParseIP(ip); parsed != nil && isInternalIP(parsed) {
+			t.Errorf("getIPs() returned internal address %q", ip)
+		}
 	}
 }

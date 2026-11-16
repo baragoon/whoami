@@ -4,7 +4,21 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - '.dockerignore'
+      - '.github/workflows/**'
+      - '.gitignore'
+      - '**/docker-compose.yml'
+      - 'README.md'
+      - 'renovate.jso5'
   pull_request:
+    paths-ignore:
+      - '.dockerignore'
+      - '.github/workflows/**'
+      - '.gitignore'
+      - '**/docker-compose.yml'
+      - 'README.md'
+      - 'renovate.jso5'
 
 jobs:
 

@@ -5,6 +5,17 @@
   extends: [
     "config:best-practices",
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^README\\.md$/"],
+      "matchStrings": [
+        "(?<depName>ghcr\\.io/baragoon/whoami):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    }
+  ],
   postUpdateOptions: [
     "gomodTidy",
   ],
@@ -32,6 +43,14 @@
       groupSlug: 'golang-version',
       separateMinorPatch: true,
       separateMultipleMinor: true,
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["ghcr.io/baragoon/whoami"],
+      "pinDigests": false,
+      "automerge": true,
+      "automergeType": "branch",
+      "ignoreTests": true
     },
   ],
 }

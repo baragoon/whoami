@@ -174,8 +174,9 @@ func Test_hideForwardedServerHeader(t *testing.T) {
 			for _, hide := range []bool{false, true} {
 				hideForwardedServer = hide
 
-				request := httptest.NewRequest(http.MethodGet, "/", nil)
+				request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 				request.Header.Set("X-Forwarded-Server", "proxy.example")
+
 				response := httptest.NewRecorder()
 
 				test.handler(response, request)
@@ -210,6 +211,7 @@ func Test_getEnvBool(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(key, test.value)
+
 			if got := getEnvBool(key, test.fallback); got != test.want {
 				t.Errorf("getEnvBool() = %t, want %t", got, test.want)
 			}

@@ -33,32 +33,26 @@ const (
 )
 
 var (
-	cert            string
-	key             string
-	ca              string
-	port            string
-	name            string
-	verbose         bool
-	hideInternalIPs bool
-	healthCheckHost string
+	cert                string
+	key                 string
+	ca                  string
+	port                string
+	name                string
+	verbose             bool
+	hideInternalIPs     bool
+	hideForwardedServer bool
+	healthCheckHost     string
 )
 
 func init() {
-	if value := os.Getenv("WHOAMI_HIDE_INTERNAL_IPS"); value != "" {
-		var err error
-
-		hideInternalIPs, err = strconv.ParseBool(value)
-		if err != nil {
-			log.Fatalf("invalid WHOAMI_HIDE_INTERNAL_IPS value %q: %v", value, err)
-		}
-	}
-
-	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&verbose, "verbose", getEnvBool("WHOAMI_VERBOSE", false), "Enable verbose logging")
 	flag.StringVar(&cert, "cert", getEnv("WHOAMI_CERT", ""), "give me a certificate")
 	flag.StringVar(&key, "key", getEnv("WHOAMI_KEY", ""), "give me a key")
 	flag.StringVar(&ca, "cacert", getEnv("WHOAMI_CACERT", ""), "give me a CA chain, enforces mutual TLS")
 	flag.StringVar(&port, "port", getEnv("WHOAMI_PORT_NUMBER", "80"), "give me a port number")
 	flag.StringVar(&name, "name", os.Getenv("WHOAMI_NAME"), "give me a name")
+	flag.BoolVar(&hideInternalIPs, "hide-internal-ips", getEnvBool("WHOAMI_HIDE_INTERNAL_IPS", false), "Hide internal IP addresses")
+	flag.BoolVar(&hideForwardedServer, "hide-x-forwarded-server", getEnvBool("WHOAMI_HIDE_X_FORWARDED_SERVER", false), "Hide the X-Forwarded-Server request header")
 
 	healthCheckHost = getEnv("WHOAMI_HEALTHCHECK_HOST", "127.0.0.1")
 }
@@ -132,14 +126,14 @@ func main() {
 
 func runHealthCheck(args []string) error {
 	config := healthCheckConfig{
-		port:                            port,
-		host:                            healthCheckHost,
-		serverCert:                      cert,
-		serverKey:                       key,
-		clientCert:                      getEnv("WHOAMI_HEALTHCHECK_CLIENT_CERT", ""),
-		clientKey:                       getEnv("WHOAMI_HEALTHCHECK_CLIENT_KEY", ""),
-		serverCA:                        getEnv("WHOAMI_HEALTHCHECK_SERVER_CA", ""),
-		serverRequiresClientCertificate: getEnv("WHOAMI_CACERT", "") != "",
+		port:           port,
+		host:           healthCheckHost,
+		serverCert:     cert,
+		serverKey:      key,
+		clientCert:     getEnv("WHOAMI_HEALTHCHECK_CLIENT_CERT", ""),
+		clientKey:      getEnv("WHOAMI_HEALTHCHECK_CLIENT_KEY", ""),
+		serverCA:       getEnv("WHOAMI_HEALTHCHECK_SERVER_CA", ""),
+		serverClientCA: getEnv("WHOAMI_CACERT", ""),
 	}
 
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -151,6 +145,7 @@ func runHealthCheck(args []string) error {
 	flags.StringVar(&config.clientCert, "healthcheck-client-cert", config.clientCert, "health check client certificate path")
 	flags.StringVar(&config.clientKey, "healthcheck-client-key", config.clientKey, "health check client key path")
 	flags.StringVar(&config.serverCA, "healthcheck-server-ca", config.serverCA, "CA certificate for health check server validation")
+	flags.StringVar(&config.serverClientCA, "cacert", config.serverClientCA, "server CA that requires a health check client certificate")
 
 	err := flags.Parse(args)
 	if err != nil {
@@ -163,8 +158,8 @@ func runHealthCheck(args []string) error {
 
 	tlsEnabled := config.serverCert != "" && config.serverKey != ""
 
-	if tlsEnabled && config.serverRequiresClientCertificate && (config.clientCert == "" || config.clientKey == "") {
-		return errors.New("WHOAMI_CACERT enables server mTLS; configure WHOAMI_HEALTHCHECK_CLIENT_CERT and WHOAMI_HEALTHCHECK_CLIENT_KEY")
+	if tlsEnabled && config.serverClientCA != "" && (config.clientCert == "" || config.clientKey == "") {
+		return errors.New("--cacert or WHOAMI_CACERT enables server mTLS; configure WHOAMI_HEALTHCHECK_CLIENT_CERT and WHOAMI_HEALTHCHECK_CLIENT_KEY")
 	}
 
 	tlsConfig, err := healthCheckTLSConfig(tlsEnabled, config.clientCert, config.clientKey, config.serverCA)
@@ -183,14 +178,14 @@ func runHealthCheck(args []string) error {
 }
 
 type healthCheckConfig struct {
-	port                            string
-	host                            string
-	serverCert                      string
-	serverKey                       string
-	clientCert                      string
-	clientKey                       string
-	serverCA                        string
-	serverRequiresClientCertificate bool
+	port           string
+	host           string
+	serverCert     string
+	serverKey      string
+	clientCert     string
+	clientKey      string
+	serverCA       string
+	serverClientCA string
 }
 
 func healthCheckTLSConfig(tlsEnabled bool, clientCertFile, clientKeyFile, serverCAFile string) (*tls.Config, error) {
@@ -451,7 +446,13 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err := r.Write(w)
+	request := r
+	if hideForwardedServer {
+		request = r.Clone(r.Context())
+		request.Header.Del("X-Forwarded-Server")
+	}
+
+	err := request.Write(w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -482,7 +483,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	data := Data{
 		Hostname:   hostname,
 		IP:         getIPs(),
-		Headers:    r.Header,
+		Headers:    filterForwardedServerHeader(r.Header),
 		URL:        r.URL.RequestURI(),
 		Host:       r.Host,
 		Method:     r.Method,
@@ -499,6 +500,17 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+}
+
+func filterForwardedServerHeader(headers http.Header) http.Header {
+	if !hideForwardedServer {
+		return headers
+	}
+
+	filtered := headers.Clone()
+	filtered.Del("X-Forwarded-Server")
+
+	return filtered
 }
 
 type healthState struct {
@@ -542,6 +554,20 @@ func getEnv(key, fallback string) string {
 	}
 
 	return value
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Fatalf("invalid %s value %q: %v", key, value, err)
+	}
+
+	return parsed
 }
 
 func getIPs() []string {

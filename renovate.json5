@@ -9,7 +9,7 @@
         "/^README\\.md$/"
       ],
       "matchStrings": [
-        "(?<depName>ghcr\\.io/baragoon/whoami):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "(?<depName>ghcr\\.io/baragoon/whoami):(?<currentValue>v?\\d+\\.\\d+\\.\\d+)"
       ],
       "versioningTemplate": "semver"
     }

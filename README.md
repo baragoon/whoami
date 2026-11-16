@@ -50,7 +50,7 @@ Heath check.
 |---------------------------------------|--------------------------------------|-----------------------------------------------------------------------------------------------|
 | `--cert`                              | `WHOAMI_CERT`                        | Give me a certificate.                                                                        |
 | `--key`                               | `WHOAMI_KEY`                         | Give me a key.                                                                                |
-| `--cacert` / `check --cacert`         | `WHOAMI_CACERT`                      | Server client CA; for `check`, indicates that the server requires a client certificate.        |
+| `--cacert` / `check --cacert`         | `WHOAMI_CACERT`                      | Server client CA; for `check`, indicates that the server requires a client certificate.       |
 | `--port`                              | `WHOAMI_PORT_NUMBER`                 | Give me a port number. (default: `80`)                                                        |
 | `--name`                              | `WHOAMI_NAME`                        | Give me a name.                                                                               |
 | `--verbose`                           | `WHOAMI_VERBOSE`                     | Enable verbose logging.                                                                       |
@@ -59,7 +59,7 @@ Heath check.
 | `check --healthcheck-host`            | `WHOAMI_HEALTHCHECK_HOST`            | Health check hostname (default: `127.0.0.1`); for TLS, must match the certificate SAN.        |
 | `check --healthcheck-client-cert`     | `WHOAMI_HEALTHCHECK_CLIENT_CERT`     | Client certificate for health checks.                                                         |
 | `check --healthcheck-client-key`      | `WHOAMI_HEALTHCHECK_CLIENT_KEY`      | Client key for health checks.                                                                 |
-| `check --healthcheck-server-ca`       | `WHOAMI_HEALTHCHECK_SERVER_CA`       | CA certificate used to validate the health-check server.                                     |
+| `check --healthcheck-server-ca`       | `WHOAMI_HEALTHCHECK_SERVER_CA`       | CA certificate used to validate the health-check server.                                      |
 
 Docker images enable a health check that runs `/whoami check` against `/health`; it requires no shell or external utilities. The check runs in a separate process and does not receive command-line arguments passed to the server. If the server uses CLI-only settings such as `--port`, `--cert`, `--key`, or `--cacert`, the health check will use its defaults unless you pass matching options to `check` in an overridden `HEALTHCHECK`. Alternatively, use the corresponding `WHOAMI_*` environment variables so the server and check share the settings. Otherwise, a working custom-port or TLS service may be reported unhealthy.
 

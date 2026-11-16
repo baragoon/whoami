@@ -155,6 +155,68 @@ func Test_checkHealth(t *testing.T) {
 	}
 }
 
+func Test_hideForwardedServerHeader(t *testing.T) {
+	previous := hideForwardedServer
+	defer func() {
+		hideForwardedServer = previous
+	}()
+
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{name: "whoami", handler: whoamiHandler},
+		{name: "api", handler: apiHandler},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, hide := range []bool{false, true} {
+				hideForwardedServer = hide
+
+				request := httptest.NewRequest(http.MethodGet, "/", nil)
+				request.Header.Set("X-Forwarded-Server", "proxy.example")
+				response := httptest.NewRecorder()
+
+				test.handler(response, request)
+
+				gotHeader := strings.Contains(response.Body.String(), "X-Forwarded-Server")
+				if gotHeader == hide {
+					t.Errorf("response contains X-Forwarded-Server = %t, hide option = %t", gotHeader, hide)
+				}
+
+				if request.Header.Get("X-Forwarded-Server") != "proxy.example" {
+					t.Error("handler modified the original request headers")
+				}
+			}
+		})
+	}
+}
+
+func Test_getEnvBool(t *testing.T) {
+	const key = "WHOAMI_TEST_BOOL"
+
+	tests := []struct {
+		name     string
+		value    string
+		fallback bool
+		want     bool
+	}{
+		{name: "true", value: "true", fallback: false, want: true},
+		{name: "false", value: "false", fallback: true, want: false},
+		{name: "empty uses fallback", value: "", fallback: true, want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(key, test.value)
+			if got := getEnvBool(key, test.fallback); got != test.want {
+				t.Errorf("getEnvBool() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func Test_runHealthCheckUsesConfiguredPort(t *testing.T) {
 	t.Setenv("WHOAMI_CACERT", "")
 
@@ -293,17 +355,35 @@ func Test_runHealthCheckAllowsServerOnlyCertificate(t *testing.T) {
 }
 
 func Test_runHealthCheckRequiresClientCredentialsForMTLS(t *testing.T) {
-	t.Setenv("WHOAMI_CACERT", "client-ca.pem")
+	tests := []struct {
+		name   string
+		caEnv  string
+		caFlag string
+	}{
+		{name: "environment variable", caEnv: "client-ca.pem"},
+		{name: "command-line flag", caFlag: "--cacert=client-ca.pem"},
+	}
 
-	err := runHealthCheck([]string{
-		"--cert=server.crt",
-		"--key=server.key",
-		healthCheckClientCertFlag,
-		healthCheckClientKeyFlag,
-		healthCheckServerCAFlag,
-	})
-	if err == nil || !strings.Contains(err.Error(), "WHOAMI_HEALTHCHECK_CLIENT_CERT") {
-		t.Errorf("runHealthCheck() error = %v, want mTLS client-credential guidance", err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("WHOAMI_CACERT", test.caEnv)
+
+			args := []string{
+				"--cert=server.crt",
+				"--key=server.key",
+				healthCheckClientCertFlag,
+				healthCheckClientKeyFlag,
+				healthCheckServerCAFlag,
+			}
+			if test.caFlag != "" {
+				args = append(args, test.caFlag)
+			}
+
+			err := runHealthCheck(args)
+			if err == nil || !strings.Contains(err.Error(), "WHOAMI_HEALTHCHECK_CLIENT_CERT") {
+				t.Errorf("runHealthCheck() error = %v, want mTLS client-credential guidance", err)
+			}
+		})
 	}
 }
 

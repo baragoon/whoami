@@ -1,5 +1,7 @@
 # whoami
 
+[![Traefik Whoami](logo.svg)](#whoami)
+
 [![Build Status](https://github.com/baragoon/whoami/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/baragoon/whoami/actions/workflows/ci.yml)
 
 Tiny Go webserver that prints OS information and HTTP request to output.

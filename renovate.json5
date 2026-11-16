@@ -1,56 +1,73 @@
 {
-  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
-  configMigration: true,
-  forkProcessing: "enabled",
-  extends: [
-    "config:best-practices",
-  ],
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "configMigration": true,
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^README\\.md$/"],
+      "datasourceTemplate": "docker",
+      "managerFilePatterns": [
+        "/^README\\.md$/"
+      ],
       "matchStrings": [
         "(?<depName>ghcr\\.io/baragoon/whoami):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
-      "datasourceTemplate": "docker",
       "versioningTemplate": "semver"
     }
   ],
-  postUpdateOptions: [
-    "gomodTidy",
+  "extends": [
+    "config:best-practices"
   ],
-  packageRules: [
+  "forkProcessing": "enabled",
+  "packageRules": [
     {
-      matchManagers: [
-        'gomod',
+      "groupName": "go dependencies",
+      "matchDepTypes": [
+        "indirect",
+        "require"
       ],
-      matchDepTypes: ['indirect', 'require'],
-      groupName: 'go dependencies',
+      "matchManagers": [
+        "gomod"
+      ]
     },
     {
-      matchManagers: ['dockerfile'],
-      matchPackageNames: ['golang'],
-      groupName: 'golang version',
-      groupSlug: 'golang-version',
-      separateMinorPatch: true,
-      separateMultipleMinor: true,
+      "groupName": "golang version",
+      "groupSlug": "golang-version",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "golang"
+      ],
+      "separateMinorPatch": true,
+      "separateMultipleMinor": true
     },
     {
-      matchManagers: ['gomod'],
-      matchPackageNames: ['go'],
-      rangeStrategy: 'bump',
-      groupName: 'golang version',
-      groupSlug: 'golang-version',
-      separateMinorPatch: true,
-      separateMultipleMinor: true,
+      "groupName": "golang version",
+      "groupSlug": "golang-version",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "go"
+      ],
+      "rangeStrategy": "bump",
+      "separateMinorPatch": true,
+      "separateMultipleMinor": true
     },
     {
-      "matchManagers": ["custom.regex"],
-      "matchPackageNames": ["ghcr.io/baragoon/whoami"],
-      "pinDigests": false,
       "automerge": true,
       "automergeType": "branch",
-      "ignoreTests": true
-    },
+      "ignoreTests": true,
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/baragoon/whoami"
+      ],
+      "pinDigests": false
+    }
   ],
+  "postUpdateOptions": [
+    "gomodTidy"
+  ]
 }

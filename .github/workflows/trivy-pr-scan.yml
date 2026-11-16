@@ -31,7 +31,7 @@ jobs:
           output: 'trivy-repo-results.txt'
 
       - name: Read Trivy results
-        id: trivy-results
+        id: trivy_results
         run: |
           if [ -f trivy-repo-results.txt ]; then
             RESULTS=$(cat trivy-repo-results.txt)
@@ -46,7 +46,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const results = `${{ steps.trivy-results.outputs.results }}`;
+            const results = `${{ steps.trivy_results.outputs.results }}`;
             const comment = `## 🔍 Trivy Security Scan Results
             
             <details>

@@ -10,6 +10,7 @@ on:
         required: false
         type: string
         default: ""
+  workflow_dispatch: {}
 
 jobs:
   release:
@@ -17,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
       packages: write
     env:
       CGO_ENABLED: 0

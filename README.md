@@ -161,7 +161,7 @@ version: '3.9'
 
 services:
   whoami:
-    image: ghcr.io/baragoon/whoami:v1.0.2
+    image: ghcr.io/baragoon/whoami:v1.1.0
     command:
        # It tells whoami to start listening on 2001 instead of 80
        - --port=2001
